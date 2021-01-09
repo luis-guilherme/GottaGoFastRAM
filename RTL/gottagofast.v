@@ -61,8 +61,10 @@ reg [7:0] addr_match;
 localparam [15:0] mfg_id  = 16'h07DB;
 localparam [7:0]  prod_id = 8'd69;
 localparam [15:0] serial  = 16'd420;
-reg autoconfig_cycle;
+
+wire autoconfig_cycle;
 reg shutup = 0;
+reg CFGINnr;
 reg configured;
 reg cdtv_configured;
 reg [2:0] autoconfig_state;
@@ -84,6 +86,12 @@ localparam   Offer_8M = 3'b000,
 assign DBUS[15:12] = (autoconfig_cycle & RWn & !UDSn) ? data_out[3:0] : 'bZ;
 
 `ifdef cdtv
+assign autoconfig_cycle = (ADDR[23:16] == 8'hE8) & !CFGINnr & !shutup & cdtv_configured;
+`else
+assign autoconfig_cycle = (ADDR[23:16] == 8'hE8) & !CFGINnr & !shutup;
+`endif
+
+`ifdef cdtv
 // CDTV DMAC is first in chain.
 // So we wait until it's configured before we talk
 always @(negedge UDSn or negedge reset)
@@ -99,32 +107,20 @@ end
 `endif
 
 
-// Assert Config out at end of bus cycle
+// Register Config in/out at end of bus cycle
 always @(posedge ASn or negedge reset)
 begin
   if (!reset) begin
-    CFGOUTn = 1'b1;
+    CFGOUTn <= 1'b1;
+    CFGINnr <= 1'b1;
   end else begin
-    CFGOUTn = !shutup;
+    CFGOUTn <= !shutup;
+    CFGINnr <= CFGINn;
   end
 end
-
-always @(negedge CLK or negedge reset)
-begin
-  if (!reset) begin
-    autoconfig_cycle = 1'b0;
-  end else begin
-`ifdef cdtv
-    autoconfig_cycle = (ADDR[23:16] == 8'hE8) & !ASn & !CFGINn & !shutup & cdtv_configured;
-`else
-    autoconfig_cycle = (ADDR[23:16] == 8'hE8) & !ASn & !CFGINn & !shutup;
-`endif
-  end
-end
-
 
 // Offers an 8MB block first, if there's no space offer 4MB, 2MB then 1MB before giving up
-always @(posedge CLK or negedge reset)
+always @(negedge UDSn or negedge reset)
 begin
   if (!reset) begin
     data_out <= 'bZ;
@@ -158,7 +154,7 @@ begin
   end
 end
 
-always @(negedge UDSn or negedge reset)
+always @(posedge UDSn or negedge reset)
 begin
   if (!reset) begin
     configured <= 1'b0;
