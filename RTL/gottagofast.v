@@ -66,7 +66,6 @@ wire autoconfig_cycle;
 reg shutup = 0;
 reg CFGINnr;
 reg configured;
-reg cdtv_configured;
 reg [2:0] autoconfig_state;
 reg [3:0] data_out;
 
@@ -86,6 +85,8 @@ localparam   Offer_8M = 3'b000,
 assign DBUS[15:12] = (autoconfig_cycle & RWn & !UDSn) ? data_out[3:0] : 'bZ;
 
 `ifdef cdtv
+reg cdtv_configured;
+
 assign autoconfig_cycle = (ADDR[23:16] == 8'hE8) & !CFGINnr & !shutup & cdtv_configured;
 `else
 assign autoconfig_cycle = (ADDR[23:16] == 8'hE8) & !CFGINnr & !shutup;
@@ -124,106 +125,105 @@ always @(negedge UDSn or negedge reset)
 begin
   if (!reset) begin
     data_out <= 'bZ;
-  end else if (autoconfig_cycle & RWn) begin
-    case (ADDR[8:1])
-      8'h00:   data_out <= 4'b1110;
-      8'h01: 
-        case (autoconfig_state)
-          Offer_8M: data_out <= 4'b0000;
-          Offer_4M: data_out <= 4'b0111;
-          Offer_2M: data_out <= 4'b0110;
-          Offer_1M: data_out <= 4'b0101;
-          default:  data_out <= 4'b0000;
-        endcase
-      8'h02:   data_out <= ~prod_id[7:4]; // Product number
-      8'h03:   data_out <= ~prod_id[3:0]; // Product number
-      8'h04:   data_out <= ~4'b1000;
-      8'h05:   data_out <= ~4'b0000;
-      8'h08:   data_out <= ~mfg_id[15:12]; // Manufacturer ID
-      8'h09:   data_out <= ~mfg_id[11:8];  // Manufacturer ID
-      8'h0A:   data_out <= ~mfg_id[7:4];   // Manufacturer ID
-      8'h0B:   data_out <= ~mfg_id[3:0];   // Manufacturer ID
-      8'h10:   data_out <= ~serial[15:12]; // Serial number
-      8'h11:   data_out <= ~serial[11:8];  // Serial number
-      8'h12:   data_out <= ~serial[7:4];   // Serial number
-      8'h13:   data_out <= ~serial[3:0];   // Serial number
-      8'h20:   data_out <= 4'b0;
-      8'h21:   data_out <= 4'b0;
-      default: data_out <= 4'hF;
-    endcase
-  end
-end
-
-always @(posedge UDSn or negedge reset)
-begin
-  if (!reset) begin
     configured <= 1'b0;
     shutup <= 1'b0;
     addr_match <= 8'b00000000;
     autoconfig_state <= Offer_8M;
-  end else if (autoconfig_cycle & !RWn) begin
-    if (ADDR[8:1] == 8'h26) begin
-      // We've been told to shut up (not enough memory space)
-      // Try offering a smaller block
-      if (autoconfig_state >= SHUTUP-1) begin
-        // All options exhausted - time to shut up!
-        shutup <= 1;
-        autoconfig_state <= SHUTUP;
-      end else begin
-        // Offer the next smallest block
-        autoconfig_state <= autoconfig_state + 1;
-      end
-    end
-    else if (ADDR[8:1] == 8'h24) begin
-      case (autoconfig_state)
-        Offer_8M:
-          begin
-            addr_match <= 8'hFF;
-            shutup     <= 1'b1;
-          end
-        Offer_4M:
-          begin
-            case(DBUS)
-              4'h2:    addr_match <= (addr_match|8'b00001111);
-              4'h4:    addr_match <= (addr_match|8'b00111100);
-              4'h6:    addr_match <= (addr_match|8'b11110000);
-            endcase
-            shutup     <= 1'b1;
-          end
-        Offer_2M:
-          begin
-            case(DBUS)
-              4'h2:    addr_match <= (addr_match|8'b00000011);
-              4'h4:    addr_match <= (addr_match|8'b00001100);
-              4'h6:    addr_match <= (addr_match|8'b00110000);
-              4'h8:    addr_match <= (addr_match|8'b11000000);
-            endcase
-            `ifdef Offer_6M
-            autoconfig_state <= Offer_4M;
-            `else
-            shutup     <= 1'b1;
-            `endif
-          end
-        Offer_1M:
-          begin
-            case(DBUS)
-              4'h2:    addr_match <= (addr_match|8'b00000001);
-              4'h3:    addr_match <= (addr_match|8'b00000010);
-              4'h4:    addr_match <= (addr_match|8'b00000100);
-              4'h5:    addr_match <= (addr_match|8'b00001000);
-              4'h6:    addr_match <= (addr_match|8'b00010000);
-              4'h7:    addr_match <= (addr_match|8'b00100000);
-              4'h8:    addr_match <= (addr_match|8'b01000000);
-              4'h9:    addr_match <= (addr_match|8'b10000000);
-            endcase
-            shutup     <= 1'b1;
-          end
-        default:  addr_match <= 8'b0;
+  end else if (autoconfig_cycle) begin
+    if (RWn) begin
+      //Autoconfig Read
+      case (ADDR[8:1])
+        8'h00:   data_out <= 4'b1110;
+        8'h01: 
+          case (autoconfig_state)
+            Offer_8M: data_out <= 4'b0000;
+            Offer_4M: data_out <= 4'b0111;
+            Offer_2M: data_out <= 4'b0110;
+            Offer_1M: data_out <= 4'b0101;
+            default:  data_out <= 4'b0000;
+          endcase
+        8'h02:   data_out <= ~prod_id[7:4]; // Product number
+        8'h03:   data_out <= ~prod_id[3:0]; // Product number
+        8'h04:   data_out <= ~4'b1000;
+        8'h05:   data_out <= ~4'b0000;
+        8'h08:   data_out <= ~mfg_id[15:12]; // Manufacturer ID
+        8'h09:   data_out <= ~mfg_id[11:8];  // Manufacturer ID
+        8'h0A:   data_out <= ~mfg_id[7:4];   // Manufacturer ID
+        8'h0B:   data_out <= ~mfg_id[3:0];   // Manufacturer ID
+        8'h10:   data_out <= ~serial[15:12]; // Serial number
+        8'h11:   data_out <= ~serial[11:8];  // Serial number
+        8'h12:   data_out <= ~serial[7:4];   // Serial number
+        8'h13:   data_out <= ~serial[3:0];   // Serial number
+        8'h20:   data_out <= 4'b0;
+        8'h21:   data_out <= 4'b0;
+        default: data_out <= 4'hF;
       endcase
-      configured <= 1'b1;
+    end else begin
+      // Autoconfig Write
+      if (ADDR[8:1] == 8'h26) begin
+        // We've been told to shut up (not enough memory space)
+        // Try offering a smaller block
+        if (autoconfig_state >= SHUTUP-1) begin
+          // All options exhausted - time to shut up!
+          shutup <= 1;
+          autoconfig_state <= SHUTUP;
+        end else begin
+          // Offer the next smallest block
+          autoconfig_state <= autoconfig_state + 1;
+        end
+      end
+      else if (ADDR[8:1] == 8'h24) begin
+        case (autoconfig_state)
+          Offer_8M:
+            begin
+              addr_match <= 8'hFF;
+              shutup     <= 1'b1;
+            end
+          Offer_4M:
+            begin
+              case(DBUS)
+                4'h2:    addr_match <= (addr_match|8'b00001111);
+                4'h4:    addr_match <= (addr_match|8'b00111100);
+                4'h6:    addr_match <= (addr_match|8'b11110000);
+              endcase
+              shutup     <= 1'b1;
+            end
+          Offer_2M:
+            begin
+              case(DBUS)
+                4'h2:    addr_match <= (addr_match|8'b00000011);
+                4'h4:    addr_match <= (addr_match|8'b00001100);
+                4'h6:    addr_match <= (addr_match|8'b00110000);
+                4'h8:    addr_match <= (addr_match|8'b11000000);
+              endcase
+              `ifdef Offer_6M
+              autoconfig_state <= Offer_4M;
+              `else
+              shutup     <= 1'b1;
+              `endif
+            end
+          Offer_1M:
+            begin
+              case(DBUS)
+                4'h2:    addr_match <= (addr_match|8'b00000001);
+                4'h3:    addr_match <= (addr_match|8'b00000010);
+                4'h4:    addr_match <= (addr_match|8'b00000100);
+                4'h5:    addr_match <= (addr_match|8'b00001000);
+                4'h6:    addr_match <= (addr_match|8'b00010000);
+                4'h7:    addr_match <= (addr_match|8'b00100000);
+                4'h8:    addr_match <= (addr_match|8'b01000000);
+                4'h9:    addr_match <= (addr_match|8'b10000000);
+              endcase
+              shutup     <= 1'b1;
+            end
+          default:  addr_match <= 8'b0;
+        endcase
+        configured <= 1'b1;
+      end
     end
   end
 end
+
 `endif
 
 // Memory controller
@@ -270,7 +270,7 @@ end
 always @(negedge CLK or negedge reset)
 begin
   if (!reset) begin
-    ram_cycle = 1'b1;
+    ram_cycle = 1'b0;
   end else begin
 `ifdef autoconfig
     ram_cycle = (
